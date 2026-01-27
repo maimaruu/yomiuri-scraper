@@ -25,49 +25,68 @@ def init_driver():
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--disable-extensions")
-    # 讀賣新聞はUser-Agentチェックが厳しいため、一般的なブラウザに見せかける設定
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
 
     service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
-# --- 本文抽出関数（続きを読むボタン対応）---
+# --- 本文抽出関数（続きを読む ＆ 複数ページ 両対応版）---
 def extract_body_content(driver):
     """
-    「続きを読む」ボタンがあればクリックし、展開された本文を取得します。
+    「続きを読む」があればクリックし、
+    さらに「次へ（ページ送り）」があれば巡回して全文を取得します。
     """
-    try:
-        # 「続きを読む」ボタンを探す（クラス名やテキストで検索）
-        # 読売新聞のパターン: buttonタグやaタグで「続きを読む」を含むもの
-        read_more_buttons = driver.find_elements(By.XPATH, "//button[contains(., '続きを読む')] | //a[contains(., '続きを読む')] | //*[contains(@class, 'readmore-btn')]")
-        
-        for btn in read_more_buttons:
-            if btn.is_displayed():
-                print("[DEBUG] Clicking 'Read More' button...")
-                driver.execute_script("arguments[0].click();", btn)
-                time.sleep(2) # 展開待ち
-                break
-    except Exception as e:
-        print(f"[DEBUG] No 'Read More' button clicked: {e}")
-
-    # 本文取得
-    soup = BeautifulSoup(driver.page_source, "html.parser")
+    full_text = ""
+    current_page = 1
     
-    # 記事本文のコンテナ（p-main-contents など）
-    article_div = soup.find("div", class_=re.compile(r"p-main-contents|article-body|uni-news-article"))
-    
-    if article_div:
-        # 不要な要素（広告やスクリプトなど）を削除
-        for tag in article_div.find_all(["script", "style", "iframe", "div", "aside"]):
-            # divは消しすぎると本文が消えることがあるので、特定のクラスのみ消すのが安全だが、
-            # ここではテキストのみ抽出するため、pタグを中心に集める
+    while True:
+        # 1. 「続きを読む」ボタンがあればクリック（展開型への対応）
+        try:
+            read_more_buttons = driver.find_elements(By.XPATH, "//button[contains(., '続きを読む')] | //a[contains(., '続きを読む')] | //*[contains(@class, 'readmore-btn')]")
+            for btn in read_more_buttons:
+                if btn.is_displayed():
+                    print(f"[DEBUG] Page {current_page}: Clicking 'Read More' button...")
+                    driver.execute_script("arguments[0].click();", btn)
+                    time.sleep(2)
+                    break
+        except Exception:
             pass
+
+        # 2. 現在のページの本文を取得
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        article_div = soup.find("div", class_=re.compile(r"p-main-contents|article-body|uni-news-article"))
+        
+        if article_div:
+            # 本文パラグラフを取得
+            paragraphs = [p.get_text().strip() for p in article_div.find_all("p") if p.get_text().strip()]
+            page_text = "\n".join(paragraphs)
+            full_text += page_text + "\n"
+            print(f"[DEBUG] Page {current_page}: Extracted {len(page_text)} chars.")
+        
+        # 3. 「次へ」ボタンがあるかチェック（複数ページ型への対応）
+        # 読売新聞の次ページボタンは通常 class="p-pager__next" または "next" を含む
+        try:
+            next_buttons = driver.find_elements(By.CSS_SELECTOR, "a.p-pager__next, a.next, a[rel='next']")
             
-        paragraphs = [p.get_text().strip() for p in article_div.find_all("p") if p.get_text().strip()]
-        return "\n".join(paragraphs)
-    
-    return ""
+            if next_buttons and next_buttons[0].is_displayed():
+                next_url = next_buttons[0].get_attribute("href")
+                print(f"[DEBUG] Found next page: {next_url}")
+                driver.get(next_url)
+                time.sleep(2) # ページ遷移待機
+                current_page += 1
+                
+                # 無限ループ防止（念のため10ページまで）
+                if current_page > 10:
+                    break
+            else:
+                # 次のページがなければ終了
+                break
+        except Exception as e:
+            print(f"[DEBUG] Pagination check error: {e}")
+            break
+
+    return full_text.strip()
 
 # --- 記事情報取得関数 ---
 def extract_article_info(driver, url):
@@ -75,16 +94,18 @@ def extract_article_info(driver, url):
         print(f"[DEBUG] Extracting info from: {url}")
         driver.get(url)
         time.sleep(2)
+        
+        # 初期ロード時のメタデータ取得用
         soup = BeautifulSoup(driver.page_source, "html.parser")
 
         # 1. IDの抽出
         article_id_match = re.search(r'/([^/]+)/?$', url)
         article_id = article_id_match.group(1) if article_id_match else "NO_ID"
 
-        # 2. メタデータの抽出 (LD-JSONを最優先)
+        # 2. メタデータの抽出 (LD-JSON優先)
         title = "NO TITLE"
         published_at = ""
-        category = "" # 初期値は空、見つからなければ空のまま
+        category = "" 
         source = "読売新聞"
 
         ld_json_scripts = soup.find_all("script", type="application/ld+json")
@@ -92,30 +113,20 @@ def extract_article_info(driver, url):
             try:
                 data = json.loads(script.string)
                 if isinstance(data, list):
-                    data = data[0] # リストの場合は最初の要素を使う
+                    data = data[0]
                 
                 if isinstance(data, dict) and data.get("@type") == "NewsArticle":
                     if "headline" in data:
                         title = data["headline"]
                     if "datePublished" in data:
                         published_at = data["datePublished"]
-                    # ユーザー指定：讀賣がつけたタグ（articleSection）のみを取得
                     if "articleSection" in data:
                         category = data["articleSection"]
                     if "author" in data and isinstance(data["author"], dict):
                          source = data["author"].get("name", "読売新聞")
-                    break # NewsArticleが見つかったらループ終了
+                    break
             except Exception:
                 continue
-
-        # HTMLタグからのフォールバック（JSONになかった場合）
-        if not category:
-            # パンくずリストから取得を試みる
-            breadcrumbs = soup.select(".p-breadcrumbs__item")
-            if breadcrumbs:
-                # 最後から2番目などがカテゴリの場合が多いが、サイトによる。
-                # 読売の場合、JSON-LDが最も正確。なければ空白にしておくのが安全。
-                pass
 
         if title == "NO TITLE":
             h1 = soup.find("h1")
@@ -126,7 +137,8 @@ def extract_article_info(driver, url):
             if time_tag and time_tag.get("datetime"):
                 published_at = time_tag["datetime"]
 
-        # 3. 本文の抽出（「続きを読む」対応版）
+        # 3. 本文の抽出（全文取得ロジックへ）
+        # ここでページ遷移が発生しても、metadataは取得済みなので問題なし
         body = extract_body_content(driver)
 
         return article_id, title, source, published_at, url, category, body
@@ -142,7 +154,6 @@ def append_to_sheet(data, existing_urls):
     client = gspread.authorize(creds)
     sheet = client.open(SHEET_NAME).sheet1
 
-    # ヘッダー確認・追加
     existing = sheet.get_all_values()
     if not existing:
         headers = ["ID", "collected_at", "title", "source", "published_at", "url", "category", "body"]
@@ -151,7 +162,6 @@ def append_to_sheet(data, existing_urls):
 
     new_rows = []
     for row in data:
-        # row[5] is url
         if row[5] not in existing_urls:
             new_rows.append(row)
             existing_urls.add(row[5])
@@ -168,31 +178,26 @@ if __name__ == "__main__":
     driver = None
     try:
         driver = init_driver()
-        # 読売新聞 政治面トップ
         target_url = "https://www.yomiuri.co.jp/politics/"
         
         driver.get(target_url)
         time.sleep(3)
         
-        # 記事リンクの取得
-        # 最新ニュースリストに含まれるリンクを取得
         soup = BeautifulSoup(driver.page_source, "html.parser")
         links = soup.select("h3.title a, .p-list-item__title a, .p-headline__title a") 
         
         article_urls = []
         for a in links:
             href = a.get("href")
-            if href and "/politics/" in href or "/election/" in href or "/local/" in href: # 政治、選挙、地域面(政治関連)を含むURL
+            # 政治、選挙、地域(政治関連)
+            if href and ("/politics/" in href or "/election/" in href or "/local/" in href):
                 if "https" not in href:
                     href = "https://www.yomiuri.co.jp" + href
-                # 重複排除してリストに追加
                 if href not in article_urls:
                     article_urls.append(href)
 
-        # 3時間ごとなので、トップにある20-30件を見れば十分
         print(f"[INFO] Found {len(article_urls)} potential links on the index page.")
 
-        # 既存データの読み込み（重複チェック用）
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name(SERVICE_ACCOUNT_FILE, scope)
         client = gspread.authorize(creds)
@@ -212,17 +217,17 @@ if __name__ == "__main__":
             info = extract_article_info(driver, url)
             if info:
                 row = [
-                    info[0],    # ID
-                    timestamp,  # collected_at
-                    info[1],    # title
-                    info[2],    # source
-                    info[3],    # published_at
-                    info[4],    # url
-                    info[5],    # category (official Yomiuri tag)
-                    info[6]     # body
+                    info[0],
+                    timestamp,
+                    info[1],
+                    info[2],
+                    info[3],
+                    info[4],
+                    info[5],
+                    info[6] 
                 ]
                 collected_data.append(row)
-                time.sleep(2) # サーバー負荷軽減
+                time.sleep(2)
 
         if collected_data:
             append_to_sheet(collected_data, existing_urls)
