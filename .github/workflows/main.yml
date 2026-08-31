@@ -1,44 +1,27 @@
-name: Yomiuri Politics Scraper
+name: Yomiuri Politics Scraper (legacy manual)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'yomiuri_scraper.py'
-      - '.github/workflows/main.yml'
-  schedule:
-    # 3時間おきに実行 (UTC時間基準)
-    # cronを更新して、長期非アクティブで停止していた定期実行も再有効化する
-    - cron: '17 */3 * * *'
   workflow_dispatch:
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
       - name: Install Chrome
         run: |
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
-
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-
+        run: pip install -r requirements.txt
       - name: Create credentials file from Secret
         env:
           GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
-        run: |
-          echo "$GCP_CREDENTIALS" > credentials.json
-
+        run: echo "$GCP_CREDENTIALS" > credentials.json
       - name: Run scraper
         run: python yomiuri_scraper.py
