@@ -3,6 +3,7 @@ import time
 import re
 import json
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -20,6 +21,15 @@ LATEST_SHEET_NAME = "latest"
 
 LATEST_COUNT = 5
 HISTORY_ROW_BUFFER = 1000
+MAX_ARTICLE_PAGES = 10
+
+# 本文ではなく会員案内だけが取得された記事は採用しない。
+REJECT_BODY_MARKERS = [
+    "読売新聞をご購読の方が、お名前やメールアドレスなどの必要項目を入力すると",
+    "会員ステータスが「読者会員（申請中）」から「読者会員」に変わります",
+    "読者会員の同居のご家族が対象です",
+    "家族の登録は３人まで",
+]
 
 HISTORY_HEADERS = [
     "ID",
@@ -92,83 +102,206 @@ def init_driver():
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/91.0.4472.124 Safari/537.36"
+        "Chrome/131.0.0.0 Safari/537.36"
     )
 
-    service = Service("/usr/bin/chromedriver")
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    return driver
+    # Selenium ManagerにChromeDriverの解決を任せる。
+    return webdriver.Chrome(options=chrome_options)
 
 
-# --- 本文抽出関数（続きを読む ＆ 複数ページ 両対応版）---
+def normalize_url(url):
+    """#fragment を除いた比較用URL。"""
+    parsed = urlparse(url)
+    return parsed._replace(fragment="").geturl()
+
+
+def click_expand_controls(driver):
+    """
+    記事内の「続きを読む」「詳しくはこちら」のうち、
+    クリックで本文が展開されるものを可能な範囲で開く。
+    """
+    xpaths = [
+        "//button[contains(normalize-space(.), '続きを読む')]",
+        "//a[contains(normalize-space(.), '続きを読む')]",
+        "//*[contains(@class, 'readmore-btn')]",
+        "//button[contains(normalize-space(.), '詳しくはこちら')]",
+        "//a[contains(normalize-space(.), '詳しくはこちら')]",
+    ]
+
+    for xpath in xpaths:
+        try:
+            elements = driver.find_elements(By.XPATH, xpath)
+            for element in elements:
+                try:
+                    if not element.is_displayed():
+                        continue
+
+                    old_url = driver.current_url
+                    href = element.get_attribute("href")
+
+                    # 別記事・会員登録ページへのリンクは本文展開として扱わない。
+                    if href:
+                        href = urljoin(old_url, href)
+                        old_path = urlparse(old_url).path.rstrip("/")
+                        new_path = urlparse(href).path.rstrip("/")
+                        same_article = (
+                            new_path == old_path
+                            or new_path.startswith(old_path + "/")
+                            or old_path.startswith(new_path + "/")
+                        )
+                        if not same_article:
+                            continue
+
+                    driver.execute_script("arguments[0].click();", element)
+                    time.sleep(1.5)
+
+                    if normalize_url(driver.current_url) != normalize_url(old_url):
+                        print(
+                            "[DEBUG] Followed article continuation: "
+                            f"{driver.current_url}"
+                        )
+                    else:
+                        print("[DEBUG] Expanded article content.")
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+
+def extract_page_text(driver):
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+    article_div = soup.find(
+        "div",
+        class_=re.compile(r"p-main-contents|article-body|uni-news-article"),
+    )
+
+    if not article_div:
+        # DOM変更時の保険として article 要素も見る。
+        article_div = soup.find("article")
+
+    if not article_div:
+        return ""
+
+    paragraphs = [
+        p.get_text(" ", strip=True)
+        for p in article_div.find_all("p")
+        if p.get_text(" ", strip=True)
+    ]
+    return "\n".join(paragraphs)
+
+
+def find_next_article_page_url(driver, current_page, visited_urls):
+    """
+    「次へ」だけでなく、1 2 3 4 5 型のページャーにも対応する。
+    数字リンクは現在ページより大きい最小の番号を優先する。
+    """
+    # まず明示的な「次へ」を探す。
+    selectors = [
+        "a.p-pager__next",
+        "a.next",
+        "a[rel='next']",
+        ".p-pager a",
+        ".pagination a",
+        ".pager a",
+        "nav a",
+    ]
+
+    explicit_candidates = []
+    numeric_candidates = []
+
+    for selector in selectors:
+        try:
+            for a in driver.find_elements(By.CSS_SELECTOR, selector):
+                try:
+                    if not a.is_displayed():
+                        continue
+                    href = a.get_attribute("href")
+                    if not href:
+                        continue
+                    href = normalize_url(urljoin(driver.current_url, href))
+                    if href in visited_urls:
+                        continue
+
+                    text = (a.text or "").strip()
+                    rel = (a.get_attribute("rel") or "").lower()
+                    classes = (a.get_attribute("class") or "").lower()
+
+                    if (
+                        "next" in rel
+                        or "next" in classes
+                        or "次へ" in text
+                        or text in {"次", ">", "›", "→"}
+                    ):
+                        explicit_candidates.append(href)
+                        continue
+
+                    if re.fullmatch(r"\d+", text):
+                        page_number = int(text)
+                        if page_number > current_page:
+                            numeric_candidates.append((page_number, href))
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    if explicit_candidates:
+        return explicit_candidates[0]
+
+    if numeric_candidates:
+        numeric_candidates.sort(key=lambda x: x[0])
+        return numeric_candidates[0][1]
+
+    return None
+
+
+# --- 本文抽出関数（続きを読む・詳しくはこちら・複数ページ対応）---
 def extract_body_content(driver):
-    """
-    「続きを読む」があればクリックし、
-    さらに「次へ（ページ送り）」があれば巡回して全文を取得します。
-    """
-    full_text = ""
+    full_pages = []
+    visited_urls = set()
     current_page = 1
 
-    while True:
-        try:
-            read_more_buttons = driver.find_elements(
-                By.XPATH,
-                "//button[contains(., '続きを読む')] | "
-                "//a[contains(., '続きを読む')] | "
-                "//*[contains(@class, 'readmore-btn')]",
-            )
-            for btn in read_more_buttons:
-                if btn.is_displayed():
-                    print(
-                        f"[DEBUG] Page {current_page}: "
-                        "Clicking 'Read More' button..."
-                    )
-                    driver.execute_script("arguments[0].click();", btn)
-                    time.sleep(2)
-                    break
-        except Exception:
-            pass
+    while current_page <= MAX_ARTICLE_PAGES:
+        current_url = normalize_url(driver.current_url)
+        if current_url in visited_urls:
+            break
+        visited_urls.add(current_url)
 
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        article_div = soup.find(
-            "div",
-            class_=re.compile(r"p-main-contents|article-body|uni-news-article"),
-        )
+        click_expand_controls(driver)
 
-        if article_div:
-            paragraphs = [
-                p.get_text().strip()
-                for p in article_div.find_all("p")
-                if p.get_text().strip()
-            ]
-            page_text = "\n".join(paragraphs)
-            full_text += page_text + "\n"
+        page_text = extract_page_text(driver)
+        if page_text:
+            # 同じ本文がページ遷移の都合で重複した場合は二重追加しない。
+            if not full_pages or page_text != full_pages[-1]:
+                full_pages.append(page_text)
             print(
                 f"[DEBUG] Page {current_page}: "
                 f"Extracted {len(page_text)} chars."
             )
+        else:
+            print(f"[WARN] Page {current_page}: article body not found.")
 
-        try:
-            next_buttons = driver.find_elements(
-                By.CSS_SELECTOR, "a.p-pager__next, a.next, a[rel='next']"
-            )
-
-            if next_buttons and next_buttons[0].is_displayed():
-                next_url = next_buttons[0].get_attribute("href")
-                print(f"[DEBUG] Found next page: {next_url}")
-                driver.get(next_url)
-                time.sleep(2)
-                current_page += 1
-
-                if current_page > 10:
-                    break
-            else:
-                break
-        except Exception as e:
-            print(f"[DEBUG] Pagination check error: {e}")
+        next_url = find_next_article_page_url(
+            driver,
+            current_page=current_page,
+            visited_urls=visited_urls,
+        )
+        if not next_url:
             break
 
-    return full_text.strip()
+        print(f"[DEBUG] Found next article page: {next_url}")
+        driver.get(next_url)
+        time.sleep(2)
+        current_page += 1
+
+    return "\n".join(full_pages).strip()
+
+
+def is_rejected_body(body):
+    compact = re.sub(r"\s+", "", body or "")
+    for marker in REJECT_BODY_MARKERS:
+        if re.sub(r"\s+", "", marker) in compact:
+            return True
+    return False
 
 
 # --- 記事情報取得関数 ---
@@ -191,19 +324,31 @@ def extract_article_info(driver, url):
         ld_json_scripts = soup.find_all("script", type="application/ld+json")
         for script in ld_json_scripts:
             try:
+                if not script.string:
+                    continue
                 data = json.loads(script.string)
                 if isinstance(data, list):
-                    data = data[0]
+                    candidates = data
+                else:
+                    candidates = [data]
 
-                if isinstance(data, dict) and data.get("@type") == "NewsArticle":
-                    if "headline" in data:
-                        title = data["headline"]
-                    if "datePublished" in data:
-                        published_at = data["datePublished"]
-                    if "articleSection" in data:
-                        category = data["articleSection"]
-                    if "author" in data and isinstance(data["author"], dict):
-                        source = data["author"].get("name", "読売新聞")
+                for candidate in candidates:
+                    if not isinstance(candidate, dict):
+                        continue
+                    if candidate.get("@type") != "NewsArticle":
+                        continue
+
+                    title = candidate.get("headline", title)
+                    published_at = candidate.get("datePublished", published_at)
+                    category = candidate.get("articleSection", category)
+
+                    author = candidate.get("author")
+                    if isinstance(author, dict):
+                        source = author.get("name", source)
+                    elif isinstance(author, list) and author:
+                        first_author = author[0]
+                        if isinstance(first_author, dict):
+                            source = first_author.get("name", source)
                     break
             except Exception:
                 continue
@@ -219,6 +364,14 @@ def extract_article_info(driver, url):
                 published_at = time_tag["datetime"]
 
         body = extract_body_content(driver)
+
+        if not body:
+            print(f"[REJECT] Empty article body: {url}")
+            return None
+
+        if is_rejected_body(body):
+            print(f"[REJECT] Reader-membership notice detected: {url}")
+            return None
 
         return article_id, title, source, published_at, url, category, body
 
@@ -242,10 +395,13 @@ def info_to_history_row(info, timestamp):
 
 # --- 履歴シートへの追記 ---
 def append_history_rows(history_sheet, rows, existing_urls):
+    if not rows:
+        return
+
     existing = history_sheet.get_all_values()
     if not existing:
         history_sheet.append_row(HISTORY_HEADERS)
-        existing_urls = set()
+        existing_urls.clear()
 
     new_rows = []
     for row in rows:
@@ -254,7 +410,6 @@ def append_history_rows(history_sheet, rows, existing_urls):
             existing_urls.add(row[5])
 
     if not new_rows:
-        print("[INFO] No new articles found.")
         return
 
     ensure_history_capacity(history_sheet, len(new_rows))
@@ -311,8 +466,7 @@ if __name__ == "__main__":
                 or "/election/" in href
                 or "/local/" in href
             ):
-                if "https" not in href:
-                    href = "https://www.yomiuri.co.jp" + href
+                href = normalize_url(urljoin(target_url, href))
                 if href not in article_urls:
                     article_urls.append(href)
 
@@ -334,12 +488,16 @@ if __name__ == "__main__":
             history_sheet.append_row(HISTORY_HEADERS)
             existing_vals = [HISTORY_HEADERS]
 
-        existing_by_url = {
-            row[5]: row
-            for row in existing_vals[1:]
-            if len(row) > 5 and row[5]
-        }
-        existing_urls = set(existing_by_url.keys())
+        # 既存行のうち、会員案内本文になってしまっている行は再利用しない。
+        existing_by_url = {}
+        existing_urls = set()
+        for row in existing_vals[1:]:
+            if len(row) <= 5 or not row[5]:
+                continue
+            existing_urls.add(row[5])
+            body = row[7] if len(row) > 7 else ""
+            if body and not is_rejected_body(body):
+                existing_by_url[row[5]] = row
 
         jst = timezone(timedelta(hours=9))
         timestamp = datetime.now(jst).strftime("%Y/%m/%d %H:%M:%S")
@@ -347,10 +505,9 @@ if __name__ == "__main__":
         collected_data = []
         fresh_by_url = {}
 
-        # これまで通り、一覧に出ている未取得記事は履歴へ追加する。
+        # 未取得記事を履歴へ追加する。
         for url in article_urls:
             if url in existing_urls:
-                print(f"[SKIP] Already collected: {url}")
                 continue
 
             info = extract_article_info(driver, url)
@@ -358,17 +515,16 @@ if __name__ == "__main__":
                 row = info_to_history_row(info, timestamp)
                 collected_data.append(row)
                 fresh_by_url[url] = row
-                time.sleep(2)
+                time.sleep(1)
 
-        append_history_rows(
-            history_sheet,
-            collected_data,
-            existing_urls,
-        )
+        append_history_rows(history_sheet, collected_data, existing_urls)
 
-        # 読売政治面に現在表示されている順番の上位5件を latest に保存する。
+        # 上から見て、有効な記事が5件揃うまで取得する。
         latest_rows = []
-        for url in article_urls[:LATEST_COUNT]:
+        for url in article_urls:
+            if len(latest_rows) >= LATEST_COUNT:
+                break
+
             if url in fresh_by_url:
                 latest_rows.append(fresh_by_url[url])
                 continue
@@ -377,20 +533,24 @@ if __name__ == "__main__":
                 latest_rows.append(existing_by_url[url])
                 continue
 
-            # 念のため、履歴にも fresh_by_url にも無い場合はその場で取得する。
+            # 既存URLでも過去に会員案内しか取れていなかったものは再取得する。
             info = extract_article_info(driver, url)
-            if info:
-                row = info_to_history_row(info, timestamp)
-                latest_rows.append(row)
+            if not info:
+                continue
+
+            row = info_to_history_row(info, timestamp)
+            latest_rows.append(row)
+
+            # 完全な新規URLだけ履歴へ追加。既存の不正行は残すが latest では採用しない。
+            if url not in existing_urls:
                 append_history_rows(history_sheet, [row], existing_urls)
-                existing_by_url[url] = row
-                time.sleep(2)
+
+            time.sleep(1)
 
         update_latest_sheet(spreadsheet, latest_rows, timestamp)
 
     except Exception as e:
         print(f"[CRITICAL ERROR] {e}")
-        # GitHub Actions上でも失敗として分かるようにする。
         raise
     finally:
         if driver:
