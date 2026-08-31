@@ -44,8 +44,6 @@
       border-radius: 14px; padding: 15px; cursor: pointer;
     }
     .article-card:hover { border-color: #cbd5d1; background: #fcfdfc; }
-    .rank { display: inline-flex; width: 26px; height: 26px; border-radius: 99px; align-items: center; justify-content: center;
-      background: var(--accent-soft); color: var(--accent); font-weight: 800; font-size: 12px; margin-bottom: 8px; }
     .article-title { font-size: 16px; line-height: 1.6; font-weight: 750; }
     .meta { color: var(--sub); font-size: 12px; margin-top: 8px; }
     .status { color: var(--sub); text-align: center; padding: 48px 18px; line-height: 1.8; }
@@ -82,7 +80,7 @@
 
   <script>
     const FIRST_PROMPT = 'この記事を読んで、頭に浮かんだことを思いつくまま書いてください。まとまっていなくて大丈夫です。';
-    const ACK = 'ここまでのコメントは記録しました。次からはAIが回答します。';
+    const ACK = '記録しました。次からはAIが回答します。';
 
     const state = {
       screen: 'list',
@@ -115,6 +113,25 @@
 
     function nowISO() { return new Date().toISOString(); }
 
+    function shuffleOnce(items) {
+      const arr = items.map(item => ({ ...item }));
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr.map((item, i) => ({ ...item, display_position: i + 1 }));
+    }
+
+    function presentedArticles() {
+      return state.articles.map(a => ({
+        article_id: a.article_id,
+        title: a.title,
+        source_rank: a.source_rank,
+        display_position: a.display_position,
+        url: a.url
+      }));
+    }
+
     function logEvent(event) {
       const payload = {
         client_timestamp: nowISO(),
@@ -133,20 +150,20 @@
       render();
       google.script.run
         .withSuccessHandler(articles => {
-          state.articles = Array.isArray(articles) ? articles : [];
+          const loaded = Array.isArray(articles) ? articles : [];
+          state.articles = shuffleOnce(loaded);
           state.loading = false;
           render();
           if (!state.presentedLogged && state.articles.length) {
             state.presentedLogged = true;
             logEvent({
               event_type: 'list_presented',
-              presented_articles: state.articles.map(a => ({
-                article_id: a.article_id,
-                title: a.title,
-                rank: a.rank,
-                url: a.url
-              })),
-              metadata: { count: state.articles.length }
+              presented_articles: presentedArticles(),
+              metadata: {
+                count: state.articles.length,
+                order_randomized: true,
+                order_scope: 'session'
+              }
             });
           }
         })
@@ -171,15 +188,11 @@
       logEvent({
         event_type: 'article_selected',
         article_id: article.article_id,
-        rank: article.rank,
+        source_rank: article.source_rank,
+        display_position: article.display_position,
         title: article.title,
         url: article.url,
-        presented_articles: state.articles.map(a => ({
-          article_id: a.article_id,
-          title: a.title,
-          rank: a.rank,
-          url: a.url
-        }))
+        presented_articles: presentedArticles()
       });
     }
 
@@ -188,7 +201,8 @@
         logEvent({
           event_type: 'article_closed',
           article_id: state.current.article_id,
-          rank: state.current.rank,
+          source_rank: state.current.source_rank,
+          display_position: state.current.display_position,
           title: state.current.title,
           url: state.current.url,
           metadata: { message_count: state.messageIndex }
@@ -238,7 +252,8 @@
           session_id: sessionId,
           event_type: first ? 'first_comment' : 'user_message',
           article_id: article.article_id,
-          rank: article.rank,
+          source_rank: article.source_rank,
+          display_position: article.display_position,
           title: article.title,
           url: article.url,
           message_index: index,
@@ -282,7 +297,6 @@
       } else {
         inner = `<div class="article-list">${state.articles.map((a, i) => `
           <button class="article-card" onclick="openArticle(${i})">
-            <div class="rank">${esc(a.rank || i + 1)}</div>
             <div class="article-title">${esc(a.title || 'タイトルなし')}</div>
             <div class="meta">${esc(a.source || '読売新聞')}${a.published_at ? ' ・ ' + esc(a.published_at) : ''}</div>
           </button>`).join('')}</div>`;
@@ -304,9 +318,9 @@
         `<div class="bubble ${m.role === 'user' ? 'user' : 'system'}">${esc(m.text)}</div>`
       ).join('');
 
-      const prompt = state.firstCommentDone
-        ? '続けて書きたいことがあれば、自由に入力してください。'
-        : FIRST_PROMPT;
+      const promptBlock = state.firstCommentDone
+        ? ''
+        : `<div class="prompt">${esc(FIRST_PROMPT)}</div>`;
 
       return `
         <div class="topbar">
@@ -324,11 +338,11 @@
           <article class="body">${esc(a.body)}</article>
           <section class="chat">
             ${bubbles ? `<div class="messages">${bubbles}</div>` : ''}
-            <div class="prompt">${esc(prompt)}</div>
-            <textarea id="messageInput" placeholder="ここに書いてください"></textarea>
+            ${promptBlock}
+            <textarea id="messageInput" placeholder="メッセージを入力"></textarea>
             <button class="send" onclick="submitMessage()" ${state.sending ? 'disabled' : ''}>${state.sending ? '記録中…' : '送信'}</button>
             ${state.firstCommentDone
-              ? '<div class="done-note">現在はAI APIを接続していないため、2発話目以降も入力内容だけを記録します。</div>'
+              ? '<div class="done-note">現在はAI APIを接続していないため、入力内容だけを記録します。</div>'
               : '<div class="hint">最初のコメントにはAIから内容上の返答はありません。</div>'}
           </section>
         </main>`;
