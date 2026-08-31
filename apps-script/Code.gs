@@ -2,6 +2,7 @@ const SPREADSHEET_ID = '10ka6pLQrFbtw0KNa_nmWIIjDQYLcwEqcGa_HIVnCBOY';
 const LATEST_SHEET = 'latest';
 const LOG_SHEET = 'tool_logs';
 
+// A:O は既存ログとの互換性を維持。P/Q に位置情報を追加。
 const LOG_HEADERS = [
   'event_id',
   'server_timestamp',
@@ -10,15 +11,16 @@ const LOG_HEADERS = [
   'session_id',
   'event_type',
   'article_id',
-  'source_rank',
-  'display_position',
+  'rank',
   'title',
   'url',
   'message_index',
   'message_text',
   'presented_article_ids',
   'presented_titles',
-  'metadata_json'
+  'metadata_json',
+  'source_rank',
+  'display_position'
 ];
 
 function doGet() {
@@ -68,6 +70,9 @@ function logEvent(payload) {
     ? payload.presented_articles
     : [];
 
+  const sourceRank = payload.source_rank == null ? '' : payload.source_rank;
+  const displayPosition = payload.display_position == null ? '' : payload.display_position;
+
   const row = [
     eventId,
     now,
@@ -76,15 +81,16 @@ function logEvent(payload) {
     payload.session_id || '',
     payload.event_type || '',
     payload.article_id || '',
-    payload.source_rank == null ? '' : payload.source_rank,
-    payload.display_position == null ? '' : payload.display_position,
+    sourceRank,
     payload.title || '',
     payload.url || '',
     payload.message_index == null ? '' : payload.message_index,
     payload.message_text || '',
     presented.map(a => a.article_id || '').join(' | '),
     presented.map(a => a.title || '').join(' | '),
-    JSON.stringify(payload.metadata || {})
+    JSON.stringify(payload.metadata || {}),
+    sourceRank,
+    displayPosition
   ];
 
   ensureLogCapacity_(sheet, 1);
@@ -101,16 +107,21 @@ function getOrCreateLogSheet_(ss) {
   let sheet = ss.getSheetByName(LOG_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(LOG_SHEET);
-    sheet.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS]);
-    sheet.setFrozenRows(1);
-  } else {
-    const currentHeaders = sheet.getRange(1, 1, 1, LOG_HEADERS.length).getValues()[0].map(String);
-    const differs = LOG_HEADERS.some((h, i) => currentHeaders[i] !== h);
-    if (differs) {
-      sheet.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS]);
-    }
-    sheet.setFrozenRows(1);
   }
+
+  if (sheet.getMaxColumns() < LOG_HEADERS.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), LOG_HEADERS.length - sheet.getMaxColumns());
+  }
+
+  // 既存ログの列順は変えず、ヘッダーだけ不足分を補う。
+  const existingLastColumn = Math.max(sheet.getLastColumn(), 1);
+  const existingHeaders = sheet.getRange(1, 1, 1, existingLastColumn).getValues()[0].map(String);
+  if (existingHeaders.every(h => !h)) {
+    sheet.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS]);
+  } else {
+    sheet.getRange(1, 16, 1, 2).setValues([['source_rank', 'display_position']]);
+  }
+  sheet.setFrozenRows(1);
   return sheet;
 }
 
