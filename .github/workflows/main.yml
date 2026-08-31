@@ -8,7 +8,8 @@ on:
       - '.github/workflows/main.yml'
   schedule:
     # 3時間おきに実行 (UTC時間基準)
-    - cron: '15 */3 * * *'
+    # cronを更新して、長期非アクティブで停止していた定期実行も再有効化する
+    - cron: '17 */3 * * *'
   workflow_dispatch:
 
 jobs:
