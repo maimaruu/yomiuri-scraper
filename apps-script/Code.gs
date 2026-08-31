@@ -10,7 +10,8 @@ const LOG_HEADERS = [
   'session_id',
   'event_type',
   'article_id',
-  'rank',
+  'source_rank',
+  'display_position',
   'title',
   'url',
   'message_index',
@@ -43,7 +44,7 @@ function getLatestArticles() {
   return values.slice(1, 6)
     .filter(row => row.some(v => String(v).trim() !== ''))
     .map(row => ({
-      rank: Number(row[idx.rank] || 0),
+      source_rank: Number(row[idx.rank] || 0),
       article_id: String(row[idx.ID] || ''),
       collected_at: String(row[idx.collected_at] || ''),
       title: String(row[idx.title] || ''),
@@ -75,7 +76,8 @@ function logEvent(payload) {
     payload.session_id || '',
     payload.event_type || '',
     payload.article_id || '',
-    payload.rank == null ? '' : payload.rank,
+    payload.source_rank == null ? '' : payload.source_rank,
+    payload.display_position == null ? '' : payload.display_position,
     payload.title || '',
     payload.url || '',
     payload.message_index == null ? '' : payload.message_index,
@@ -101,8 +103,12 @@ function getOrCreateLogSheet_(ss) {
     sheet = ss.insertSheet(LOG_SHEET);
     sheet.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS]);
     sheet.setFrozenRows(1);
-  } else if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS]);
+  } else {
+    const currentHeaders = sheet.getRange(1, 1, 1, LOG_HEADERS.length).getValues()[0].map(String);
+    const differs = LOG_HEADERS.some((h, i) => currentHeaders[i] !== h);
+    if (differs) {
+      sheet.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS]);
+    }
     sheet.setFrozenRows(1);
   }
   return sheet;
