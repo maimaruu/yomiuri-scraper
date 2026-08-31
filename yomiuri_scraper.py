@@ -1,3 +1,4 @@
+# Scraper v2: history + current top-5 snapshot
 import time
 import re
 import json
