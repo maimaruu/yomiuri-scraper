@@ -15,34 +15,18 @@
       --accent-soft: #edf5f2;
     }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--soft);
-      color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
-    }
+    body { margin: 0; background: var(--soft); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; }
     button, textarea { font: inherit; }
     .app { min-height: 100vh; max-width: 820px; margin: 0 auto; background: var(--paper); }
-    .topbar {
-      position: sticky; top: 0; z-index: 10;
-      min-height: 58px; display: flex; align-items: center; gap: 12px;
-      padding: 10px 16px; background: rgba(255,254,251,.96);
-      border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
-    }
+    .topbar { position: sticky; top: 0; z-index: 10; min-height: 58px; display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: rgba(255,254,251,.96); border-bottom: 1px solid var(--line); backdrop-filter: blur(8px); }
     .topbar h1 { margin: 0; font-size: 17px; line-height: 1.4; }
-    .back {
-      border: 0; background: transparent; color: var(--accent); font-weight: 700;
-      padding: 8px 4px; cursor: pointer;
-    }
+    .back { border: 0; background: transparent; color: var(--accent); font-weight: 700; padding: 8px 4px; cursor: pointer; }
     .content { padding: 18px 16px 34px; }
     .eyebrow { color: var(--sub); font-size: 12px; margin-bottom: 5px; }
     .date { font-size: 24px; font-weight: 800; margin: 0 0 8px; letter-spacing: -.02em; }
     .lead { color: var(--sub); font-size: 14px; line-height: 1.75; margin: 0 0 18px; }
     .article-list { display: grid; gap: 10px; }
-    .article-card {
-      width: 100%; text-align: left; border: 1px solid var(--line); background: #fff;
-      border-radius: 14px; padding: 15px; cursor: pointer;
-    }
+    .article-card { width: 100%; text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 14px; padding: 15px; cursor: pointer; }
     .article-card:hover { border-color: #cbd5d1; background: #fcfdfc; }
     .article-title { font-size: 16px; line-height: 1.6; font-weight: 750; }
     .meta { color: var(--sub); font-size: 12px; margin-top: 8px; }
@@ -51,301 +35,154 @@
     .article-head { padding-bottom: 16px; border-bottom: 1px solid var(--line); }
     .article-head h2 { font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; font-size: 24px; line-height: 1.55; margin: 5px 0 8px; }
     .source-link { color: var(--accent); text-decoration: none; font-size: 12px; }
-    .body {
-      font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
-      font-size: 16px; line-height: 2.05; white-space: pre-wrap; padding: 20px 0 24px;
-    }
-    .chat { border-top: 1px solid var(--line); padding-top: 20px; }
+    .body { font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; font-size: 16px; line-height: 2.05; white-space: pre-wrap; padding: 20px 0 24px; }
+    .chat { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 20px; }
+    .chat-title { font-size: 15px; font-weight: 800; margin: 0 0 8px; }
     .prompt { font-size: 14px; font-weight: 750; line-height: 1.7; margin-bottom: 10px; }
-    textarea {
-      width: 100%; min-height: 104px; resize: vertical; border: 1px solid #cfd5d2;
-      border-radius: 12px; padding: 12px; outline: none; background: #fff; color: var(--ink);
-    }
+    textarea { width: 100%; min-height: 92px; resize: vertical; border: 1px solid #cfd5d2; border-radius: 12px; padding: 12px; outline: none; background: #fff; color: var(--ink); }
     textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-    .send {
-      width: 100%; border: 0; border-radius: 11px; padding: 12px 14px; margin-top: 9px;
-      background: var(--accent); color: white; font-weight: 800; cursor: pointer;
-    }
+    .send { width: 100%; border: 0; border-radius: 11px; padding: 12px 14px; margin-top: 9px; background: var(--accent); color: white; font-weight: 800; cursor: pointer; }
     .send:disabled { opacity: .45; cursor: default; }
     .messages { display: grid; gap: 10px; margin-bottom: 14px; }
     .bubble { max-width: 88%; padding: 11px 13px; border-radius: 14px; white-space: pre-wrap; line-height: 1.65; font-size: 14px; }
     .bubble.user { margin-left: auto; background: var(--accent); color: white; border-bottom-right-radius: 4px; }
-    .bubble.system { background: #f3f4f6; color: var(--ink); border-bottom-left-radius: 4px; }
+    .bubble.assistant { background: #f3f4f6; color: var(--ink); border-bottom-left-radius: 4px; }
     .hint { color: var(--faint); font-size: 11px; line-height: 1.6; margin-top: 7px; }
-    .done-note { color: var(--sub); font-size: 12px; line-height: 1.7; margin-top: 8px; }
   </style>
 </head>
 <body>
   <div id="app" class="app"></div>
-
   <script>
-    const FIRST_PROMPT = 'この記事を読んで、頭に浮かんだことを思いつくまま書いてください。まとまっていなくて大丈夫です。';
+    const LIST_FIRST_PROMPT = '今日のニュース一覧を見て、頭に浮かんだことを思いつくまま書いてください。まとまっていなくて大丈夫です。';
+    const ARTICLE_FIRST_PROMPT = 'この記事を読んで、頭に浮かんだことを思いつくまま書いてください。まとまっていなくて大丈夫です。';
     const ACK = '記録しました。次からはAIが回答します。';
 
-    const state = {
-      screen: 'list',
-      loading: true,
-      error: '',
-      articles: [],
-      current: null,
-      messages: [],
-      sending: false,
-      firstCommentDone: false,
-      messageIndex: 0,
-      presentedLogged: false
-    };
-
+    const state = { screen: 'list', loading: true, error: '', articles: [], current: null, presentedLogged: false, listChat: newChatState(), articleChats: {} };
     const browserId = getPersistentId('news-observation-browser-id', 'b');
     const sessionId = makeId('s');
 
-    function makeId(prefix) {
-      return prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
-    }
-
-    function getPersistentId(key, prefix) {
-      let id = localStorage.getItem(key);
-      if (!id) {
-        id = makeId(prefix);
-        localStorage.setItem(key, id);
-      }
-      return id;
-    }
-
+    function newChatState() { return { messages: [], firstCommentDone: false, messageIndex: 0, sending: false }; }
+    function makeId(prefix) { return prefix + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10); }
+    function getPersistentId(key, prefix) { let id = localStorage.getItem(key); if (!id) { id = makeId(prefix); localStorage.setItem(key, id); } return id; }
     function nowISO() { return new Date().toISOString(); }
 
     function shuffleOnce(items) {
       const arr = items.map(item => ({ ...item }));
-      for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-      }
+      for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
       return arr.map((item, i) => ({ ...item, display_position: i + 1 }));
     }
 
     function presentedArticles() {
-      return state.articles.map(a => ({
-        article_id: a.article_id,
-        title: a.title,
-        source_rank: a.source_rank,
-        display_position: a.display_position,
-        url: a.url
-      }));
+      return state.articles.map(a => ({ article_id: a.article_id, title: a.title, source_rank: a.source_rank, display_position: a.display_position, url: a.url }));
+    }
+
+    function articleContextForAI() {
+      return state.articles.map(a => ({ article_id: a.article_id, title: a.title, source: a.source, published_at: a.published_at, url: a.url, body: a.body, source_rank: a.source_rank, display_position: a.display_position }));
     }
 
     function logEvent(event) {
-      const payload = {
-        client_timestamp: nowISO(),
-        browser_id: browserId,
-        session_id: sessionId,
-        ...event
-      };
-      google.script.run
-        .withFailureHandler(err => console.error('log failed', err))
-        .logEvent(payload);
+      google.script.run.withFailureHandler(err => console.error('log failed', err)).logEvent({ client_timestamp: nowISO(), browser_id: browserId, session_id: sessionId, ...event });
     }
 
     function loadLatest() {
-      state.loading = true;
-      state.error = '';
-      render();
+      state.loading = true; state.error = ''; render();
       google.script.run
         .withSuccessHandler(articles => {
-          const loaded = Array.isArray(articles) ? articles : [];
-          state.articles = shuffleOnce(loaded);
-          state.loading = false;
-          render();
+          state.articles = shuffleOnce(Array.isArray(articles) ? articles : []);
+          state.loading = false; render();
           if (!state.presentedLogged && state.articles.length) {
             state.presentedLogged = true;
-            logEvent({
-              event_type: 'list_presented',
-              presented_articles: presentedArticles(),
-              metadata: {
-                count: state.articles.length,
-                order_randomized: true,
-                order_scope: 'session'
-              }
-            });
+            logEvent({ event_type: 'list_presented', presented_articles: presentedArticles(), metadata: { count: state.articles.length, order_randomized: true, order_scope: 'session' } });
           }
         })
-        .withFailureHandler(err => {
-          state.loading = false;
-          state.error = err && err.message ? err.message : String(err);
-          render();
-        })
+        .withFailureHandler(err => { state.loading = false; state.error = err && err.message ? err.message : String(err); render(); })
         .getLatestArticles();
     }
 
     function openArticle(index) {
-      const article = state.articles[index];
-      if (!article) return;
+      const article = state.articles[index]; if (!article) return;
       state.current = article;
-      state.messages = [];
-      state.firstCommentDone = false;
-      state.messageIndex = 0;
-      state.screen = 'read';
-      render();
-      window.scrollTo({ top: 0, behavior: 'instant' });
-      logEvent({
-        event_type: 'article_selected',
-        article_id: article.article_id,
-        source_rank: article.source_rank,
-        display_position: article.display_position,
-        title: article.title,
-        url: article.url,
-        presented_articles: presentedArticles()
-      });
+      if (!state.articleChats[article.article_id]) state.articleChats[article.article_id] = newChatState();
+      state.screen = 'read'; state.error = ''; render(); window.scrollTo({ top: 0, behavior: 'instant' });
+      logEvent({ event_type: 'article_selected', article_id: article.article_id, source_rank: article.source_rank, display_position: article.display_position, title: article.title, url: article.url, presented_articles: presentedArticles() });
     }
 
     function backToList() {
       if (state.current) {
-        logEvent({
-          event_type: 'article_closed',
-          article_id: state.current.article_id,
-          source_rank: state.current.source_rank,
-          display_position: state.current.display_position,
-          title: state.current.title,
-          url: state.current.url,
-          metadata: { message_count: state.messageIndex }
-        });
+        const chat = state.articleChats[state.current.article_id] || newChatState();
+        logEvent({ event_type: 'article_closed', article_id: state.current.article_id, source_rank: state.current.source_rank, display_position: state.current.display_position, title: state.current.title, url: state.current.url, metadata: { message_count: chat.messageIndex } });
       }
-      state.screen = 'list';
-      state.current = null;
-      render();
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      state.screen = 'list'; state.current = null; state.error = ''; render(); window.scrollTo({ top: 0, behavior: 'instant' });
     }
 
-    function submitMessage() {
-      const ta = document.getElementById('messageInput');
-      if (!ta || state.sending) return;
-      const text = ta.value.trim();
-      if (!text) return;
+    function submitListMessage() { submitChatMessage('list'); }
+    function submitArticleMessage() { submitChatMessage('article'); }
 
-      state.sending = true;
-      state.messageIndex += 1;
-      const index = state.messageIndex;
-      const first = !state.firstCommentDone;
-      state.messages.push({ role: 'user', text });
+    function submitChatMessage(surface) {
+      const isArticle = surface === 'article';
+      const article = isArticle ? state.current : null;
+      if (isArticle && !article) return;
+      const chat = isArticle ? state.articleChats[article.article_id] : state.listChat;
+      const ta = document.getElementById(isArticle ? 'articleMessageInput' : 'listMessageInput');
+      if (!ta || chat.sending) return;
+      const text = ta.value.trim(); if (!text) return;
+
+      chat.sending = true; chat.messageIndex += 1;
+      const index = chat.messageIndex;
+      const first = !chat.firstCommentDone;
+      chat.messages.push({ role: 'user', text });
       ta.value = '';
-
-      if (first) {
-        state.firstCommentDone = true;
-        state.messages.push({ role: 'system', text: ACK });
-      }
-
+      if (first) { chat.firstCommentDone = true; chat.messages.push({ role: 'assistant', text: ACK, fixedAck: true }); }
       render();
 
-      const article = state.current;
+      const logPayload = {
+        event_type: isArticle ? (first ? 'first_comment' : 'user_message') : (first ? 'list_first_comment' : 'list_user_message'),
+        message_index: index, message_text: text, presented_articles: presentedArticles(), metadata: { surface: surface, ai_enabled: !first }
+      };
+      if (article) Object.assign(logPayload, { article_id: article.article_id, source_rank: article.source_rank, display_position: article.display_position, title: article.title, url: article.url });
+      logEvent(logPayload);
+
+      if (first) { chat.sending = false; render(); return; }
+
+      const history = chat.messages.filter(m => !m.fixedAck).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text }));
       google.script.run
-        .withSuccessHandler(() => {
-          state.sending = false;
-          render();
+        .withSuccessHandler(result => {
+          const reply = result && result.text ? result.text : 'AIから応答がありませんでした。';
+          chat.messages.push({ role: 'assistant', text: reply }); chat.sending = false; render();
+          logEvent({
+            event_type: isArticle ? 'ai_response' : 'list_ai_response',
+            article_id: article ? article.article_id : '', source_rank: article ? article.source_rank : '', display_position: article ? article.display_position : '', title: article ? article.title : '', url: article ? article.url : '',
+            message_index: index, message_text: reply, presented_articles: presentedArticles(),
+            metadata: { surface: surface, model: result && result.model ? result.model : '', response_id: result && result.response_id ? result.response_id : '' }
+          });
         })
-        .withFailureHandler(err => {
-          state.sending = false;
-          state.error = '記録に失敗しました。もう一度送信してください。';
-          console.error(err);
-          render();
-        })
-        .logEvent({
-          client_timestamp: nowISO(),
-          browser_id: browserId,
-          session_id: sessionId,
-          event_type: first ? 'first_comment' : 'user_message',
-          article_id: article.article_id,
-          source_rank: article.source_rank,
-          display_position: article.display_position,
-          title: article.title,
-          url: article.url,
-          message_index: index,
-          message_text: text,
-          metadata: { ai_enabled: false }
-        });
+        .withFailureHandler(err => { chat.sending = false; state.error = err && err.message ? err.message : String(err); render(); })
+        .chatWithAI({ surface: surface, messages: history, articles: articleContextForAI(), current_article_id: article ? article.article_id : '' });
     }
 
-    function esc(s) {
-      return String(s == null ? '' : s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    }
-
-    function formatDate() {
-      return new Intl.DateTimeFormat('ja-JP', {
-        year: 'numeric', month: 'long', day: 'numeric', weekday: 'short'
-      }).format(new Date());
-    }
-
-    function render() {
-      const app = document.getElementById('app');
-      if (state.screen === 'read' && state.current) {
-        app.innerHTML = renderRead();
-      } else {
-        app.innerHTML = renderList();
-      }
-    }
+    function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+    function formatDate() { return new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date()); }
+    function renderMessages(chat) { return chat.messages.map(m => `<div class="bubble ${m.role === 'user' ? 'user' : 'assistant'}">${esc(m.text)}</div>`).join(''); }
+    function render() { document.getElementById('app').innerHTML = state.screen === 'read' && state.current ? renderRead() : renderList(); }
 
     function renderList() {
       let inner = '';
-      if (state.loading) {
-        inner = '<div class="status">今日のニュースを読み込んでいます…</div>';
-      } else if (state.error) {
-        inner = `<div class="error">${esc(state.error)}</div>`;
-      } else if (!state.articles.length) {
-        inner = '<div class="status">表示できる記事がありません。</div>';
-      } else {
-        inner = `<div class="article-list">${state.articles.map((a, i) => `
-          <button class="article-card" onclick="openArticle(${i})">
-            <div class="article-title">${esc(a.title || 'タイトルなし')}</div>
-            <div class="meta">${esc(a.source || '読売新聞')}${a.published_at ? ' ・ ' + esc(a.published_at) : ''}</div>
-          </button>`).join('')}</div>`;
-      }
+      if (state.loading) inner = '<div class="status">今日のニュースを読み込んでいます…</div>';
+      else if (!state.articles.length) inner = '<div class="status">表示できる記事がありません。</div>';
+      else inner = `<div class="article-list">${state.articles.map((a, i) => `<button class="article-card" onclick="openArticle(${i})"><div class="article-title">${esc(a.title || 'タイトルなし')}</div><div class="meta">${esc(a.source || '読売新聞')}${a.published_at ? ' ・ ' + esc(a.published_at) : ''}</div></button>`).join('')}</div>`;
 
-      return `
-        <div class="topbar"><h1>ニュース読解観察ツール</h1></div>
-        <main class="content">
-          <div class="eyebrow">TODAY'S NEWS</div>
-          <h2 class="date">${esc(formatDate())}</h2>
-          <p class="lead">気になる記事を1つ選んで読んでください。最低1記事を選びます。</p>
-          ${inner}
-        </main>`;
+      const chat = state.listChat;
+      const bubbles = renderMessages(chat);
+      const prompt = chat.firstCommentDone ? '' : `<div class="prompt">${esc(LIST_FIRST_PROMPT)}</div>`;
+      return `<div class="topbar"><h1>ニュース観察ツール</h1></div><main class="content">${state.error ? `<div class="error" style="margin-bottom:12px">${esc(state.error)}</div>` : ''}<div class="eyebrow">TODAY'S NEWS</div><h2 class="date">${esc(formatDate())}</h2><p class="lead">今日のニュースを眺めてください。気になる記事は自由に開けます。</p>${inner}${!state.loading && state.articles.length ? `<section class="chat"><h3 class="chat-title">この一覧について話す</h3>${bubbles ? `<div class="messages">${bubbles}</div>` : ''}${prompt}<textarea id="listMessageInput" placeholder="メッセージを入力"></textarea><button class="send" onclick="submitListMessage()" ${chat.sending ? 'disabled' : ''}>${chat.sending ? 'AIが考えています…' : '送信'}</button>${!chat.firstCommentDone ? '<div class="hint">最初のコメントにはAIから内容上の返答はありません。</div>' : ''}</section>` : ''}</main>`;
     }
 
     function renderRead() {
       const a = state.current;
-      const bubbles = state.messages.map(m =>
-        `<div class="bubble ${m.role === 'user' ? 'user' : 'system'}">${esc(m.text)}</div>`
-      ).join('');
-
-      const promptBlock = state.firstCommentDone
-        ? ''
-        : `<div class="prompt">${esc(FIRST_PROMPT)}</div>`;
-
-      return `
-        <div class="topbar">
-          <button class="back" onclick="backToList()">← 一覧</button>
-          <h1>記事を読む</h1>
-        </div>
-        <main class="content">
-          ${state.error ? `<div class="error" style="margin-bottom:12px">${esc(state.error)}</div>` : ''}
-          <section class="article-head">
-            <div class="eyebrow">${esc(a.source || '読売新聞')}</div>
-            <h2>${esc(a.title)}</h2>
-            <div class="meta">${esc(a.published_at || '')}</div>
-            ${a.url ? `<a class="source-link" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">元記事を開く ↗</a>` : ''}
-          </section>
-          <article class="body">${esc(a.body)}</article>
-          <section class="chat">
-            ${bubbles ? `<div class="messages">${bubbles}</div>` : ''}
-            ${promptBlock}
-            <textarea id="messageInput" placeholder="メッセージを入力"></textarea>
-            <button class="send" onclick="submitMessage()" ${state.sending ? 'disabled' : ''}>${state.sending ? '記録中…' : '送信'}</button>
-            ${state.firstCommentDone
-              ? '<div class="done-note">現在はAI APIを接続していないため、入力内容だけを記録します。</div>'
-              : '<div class="hint">最初のコメントにはAIから内容上の返答はありません。</div>'}
-          </section>
-        </main>`;
+      const chat = state.articleChats[a.article_id] || newChatState();
+      const bubbles = renderMessages(chat);
+      const prompt = chat.firstCommentDone ? '' : `<div class="prompt">${esc(ARTICLE_FIRST_PROMPT)}</div>`;
+      return `<div class="topbar"><button class="back" onclick="backToList()">← 一覧</button><h1>記事を読む</h1></div><main class="content">${state.error ? `<div class="error" style="margin-bottom:12px">${esc(state.error)}</div>` : ''}<section class="article-head"><div class="eyebrow">${esc(a.source || '読売新聞')}</div><h2>${esc(a.title)}</h2><div class="meta">${esc(a.published_at || '')}</div>${a.url ? `<a class="source-link" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">元記事を開く ↗</a>` : ''}</section><article class="body">${esc(a.body)}</article><section class="chat"><h3 class="chat-title">この記事について話す</h3>${bubbles ? `<div class="messages">${bubbles}</div>` : ''}${prompt}<textarea id="articleMessageInput" placeholder="メッセージを入力"></textarea><button class="send" onclick="submitArticleMessage()" ${chat.sending ? 'disabled' : ''}>${chat.sending ? 'AIが考えています…' : '送信'}</button>${!chat.firstCommentDone ? '<div class="hint">最初のコメントにはAIから内容上の返答はありません。</div>' : ''}</section></main>`;
     }
 
     loadLatest();
